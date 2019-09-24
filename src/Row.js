@@ -1,6 +1,6 @@
 import React, {Component, cloneElement} from 'react';
 import PropTypes from 'prop-types';
-import {Animated, PanResponder, StyleSheet, ViewPropTypes} from 'react-native';
+import {Animated, PanResponder, StyleSheet, ViewPropTypes, View, Text, TouchableHighlight} from 'react-native';
 import {shallowEqual} from './utils';
 
 export default class Row extends Component {
@@ -16,6 +16,9 @@ export default class Row extends Component {
     }),
     manuallyActivateRows: PropTypes.bool,
     activationTime: PropTypes.number,
+
+    swipeRightAction: PropTypes.object,
+    swipeLeftAction: PropTypes.object,
 
     // Will be called on long press.
     onActivate: PropTypes.func,
@@ -41,6 +44,10 @@ export default class Row extends Component {
     this._location = props.location;
 
     this._animatedLocation.addListener(this._onChangeLocation);
+
+    this.state = {
+      swipeX: new Animated.Value(0),
+    };
   }
 
   _panResponder = PanResponder.create({
@@ -52,7 +59,7 @@ export default class Row extends Component {
       const vy = Math.abs(gestureState.vy)
       const vx = Math.abs(gestureState.vx)
 
-      return this._active && (this.props.horizontal ? vx > vy : vy > vx);
+      return this.swiping || (this._active && (this.props.horizontal ? vx > vy : vy > vx));;
     },
 
     onShouldBlockNativeResponder: () => {
@@ -75,19 +82,35 @@ export default class Row extends Component {
       if (this.props.manuallyActivateRows) return;
 
       this._longPressTimer = setTimeout(() => {
-        if (this._active) return;
+        if (this._active || this.swiping) return;
 
         this._toggleActive(e, gestureState);
       }, this.props.activationTime);
     },
 
     onPanResponderMove: (e, gestureState) => {
+
+      const vy = Math.abs(gestureState.vy)
+      const vx = Math.abs(gestureState.vx)
+      if (!this._active) {
+        const swiping = vx > vy;
+        if (!this.swiping && swiping) {
+          this.props.onActivate();
+        }
+        this.swiping = this.swiping || swiping;
+      }
+      if (this.swiping) {
+        this.props.onActivate();
+        this.handleSwipeGesture(gestureState);
+        return;
+      }
+
       if (
-        !this._active ||
+        (!this._active ||
         gestureState.numberActiveTouches > 1 ||
-        e.nativeEvent.target !== this._target
+        e.nativeEvent.target !== this._target)
       ) {
-        if (!this._isTouchInsideElement(e)) {
+        if (!this._isTouchInsideElement(e) || this.swiping) {
           this._cancelLongPress();
         }
 
@@ -104,6 +127,11 @@ export default class Row extends Component {
     },
 
     onPanResponderRelease: (e, gestureState) => {
+      if (this.swiping) {
+        this.handleSwipeEnd(gestureState);
+        return;
+      }
+
       if (this._active) {
         this._toggleActive(e, gestureState);
 
@@ -116,7 +144,7 @@ export default class Row extends Component {
       }
     },
 
-    onPanResponderTerminationRequest: () => {
+    onPanResponderTerminationRequest: (e, gestureState) => {
       if (this._active) {
         // If a view is active do not release responder.
         return false;
@@ -142,6 +170,53 @@ export default class Row extends Component {
     },
   });
 
+  handleSwipeGesture = (gestureState) => {
+    const { swipeLeftAction, swipeRightAction } = this.props;
+    const { dx, vx } = gestureState;
+    let toValue = 0;
+    if (swipeLeftAction && dx > 0) toValue = dx;
+    if (swipeRightAction && dx < 0) toValue = dx;
+    Animated.timing(this.state.swipeX, {
+      toValue: toValue,
+      duration: 0,
+    }).start();
+    this.swipeVelocity = vx;
+    this.lastSwipeX = toValue;
+    this.swiping = true;
+  };
+
+  handleSwipeEnd = (gestureState) => {
+    if (this.lastSwipeX < -100) {
+      Animated.timing(this.state.swipeX, {
+        toValue: -100,
+        duration: 500,
+        nativeEvent: true,
+      }).start();
+    } else if (this.lastSwipeX > 100) {
+      Animated.timing(this.state.swipeX, {
+        toValue: 100,
+        duration: 500,
+        nativeEvent: true,
+      }).start();
+    } else {
+      Animated.timing(this.state.swipeX, {
+        toValue: 0,
+        duration: 500,
+        nativeEvent: true,
+      }).start();
+    }
+    this.swiping = false;
+    this.props.onRelease();
+  };
+
+  resetSwipe = () => {
+    Animated.timing(this.state.swipeX, {
+      toValue: 0,
+      duration: 500,
+      nativeEvent: true,
+    }).start();
+  }
+
   componentWillReceiveProps(nextProps) {
     if (!this._active && !shallowEqual(this._location, nextProps.location)) {
       const animated = !this._active && nextProps.animated;
@@ -164,7 +239,7 @@ export default class Row extends Component {
   }
 
   render() {
-    const {children, style, horizontal} = this.props;
+    const {children, style, horizontal, swipeLeftAction, swipeRightAction, data} = this.props;
     const rowStyle = [
       style, styles.container, this._animatedLocation.getLayout(),
       horizontal ? styles.horizontalContainer : styles.verticalContainer,
@@ -175,12 +250,30 @@ export default class Row extends Component {
         {...this._panResponder.panHandlers}
         style={rowStyle}
         onLayout={this._onLayout}>
-        {this.props.manuallyActivateRows && children
-          ? cloneElement(children, {
-            toggleRowActive: this._toggleActive,
-          })
-          : children
-        }
+          <View style={styles.swipeContainer}>
+            { swipeLeftAction ? (
+              <TouchableHighlight
+                onPress={() => swipeLeftAction.onTap(data)}
+                style={styles.swipeLeft}>
+                { swipeLeftAction.render() }
+              </TouchableHighlight>
+            ) : <View /> }
+            { swipeRightAction ? (
+              <TouchableHighlight
+                onPress={() => swipeRightAction.onTap(data)}
+                style={styles.swipeRight}>
+                { swipeRightAction.render() }
+              </TouchableHighlight>
+            ) : <View /> }
+          </View>
+          <Animated.View style={{transform: [{translateX: this.state.swipeX}]}}>
+            {this.props.manuallyActivateRows && children
+              ? cloneElement(children, {
+                toggleRowActive: this._toggleActive,
+              })
+              : children
+            }
+          </Animated.View>
       </Animated.View>
     );
   }
@@ -210,13 +303,17 @@ export default class Row extends Component {
 
     this._active = !this._active;
 
+    if(this._active) {
+      this.resetSwipe();
+    }
+
     if (callback) {
       callback(e, gestureState, this._location);
     }
   };
 
-  _mapGestureToMove(prevGestureState, gestureState) {
-    return this.props.horizontal
+  _mapGestureToMove(prevGestureState, gestureState, swipe) {
+    return this.props.horizontal || swipe
       ? {dx: gestureState.moveX - prevGestureState.moveX}
       : {dy: gestureState.moveY - prevGestureState.moveY};
   }
@@ -240,7 +337,6 @@ export default class Row extends Component {
 
   _onLayout = (e) => {
       this._layout = e.nativeEvent.layout;
-
       if (this.props.onLayout) {
           this.props.onLayout(e);
       }
@@ -250,6 +346,27 @@ export default class Row extends Component {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
+  },
+  swipeContainer: {
+    position: 'absolute',
+    height: '100%',
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  swipeRight: {
+    height: '100%',
+    width: '50%',
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  swipeLeft: {
+    height: '100%',
+    width: '50%',
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   horizontalContainer: {
     top: 0,

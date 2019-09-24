@@ -1,4 +1,4 @@
-import React, {Component} from 'react';
+import React, {Component, createElement} from 'react';
 import PropTypes from 'prop-types';
 import {ScrollView, View, StyleSheet, Platform, RefreshControl, ViewPropTypes} from 'react-native';
 import {shallowEqual, swapArrayElements} from './utils';
@@ -33,6 +33,8 @@ export default class SortableList extends Component {
     renderRow: PropTypes.func.isRequired,
     renderHeader: PropTypes.func,
     renderFooter: PropTypes.func,
+    swipeRightAction: PropTypes.object,
+    swipeLeftAction: PropTypes.object,
 
     onChangeOrder: PropTypes.func,
     onActivateRow: PropTypes.func,
@@ -274,6 +276,9 @@ export default class SortableList extends Component {
           onPress={this._onPressRow.bind(this, key)}
           onRelease={this._onReleaseRow.bind(this, key)}
           onMove={this._onMoveRow}
+          swipeRightAction={this.props.swipeRightAction}
+          swipeLeftAction={this.props.swipeLeftAction}
+          data={data[key]}
           manuallyActivateRows={this.props.manuallyActivateRows}>
           {renderRow({
             key,
