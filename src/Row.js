@@ -253,6 +253,7 @@ export default class Row extends Component {
           <View style={styles.swipeContainer}>
             { swipeLeftAction ? (
               <TouchableHighlight
+                underlayColor="transparent"
                 onPress={() => swipeLeftAction.onTap(data)}
                 style={styles.swipeLeft}>
                 { swipeLeftAction.render() }
@@ -260,6 +261,7 @@ export default class Row extends Component {
             ) : <View /> }
             { swipeRightAction ? (
               <TouchableHighlight
+                underlayColor="transparent"
                 onPress={() => swipeRightAction.onTap(data)}
                 style={styles.swipeRight}>
                 { swipeRightAction.render() }
